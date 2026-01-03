@@ -2,36 +2,57 @@
 
 RFIDModule::RFIDModule(uint8_t ssPin, uint8_t rstPin)
     : mfrc522(ssPin, rstPin),
-      cardAvailable(false) {}
+      cardAvailable(false),
+      cardPreviouslyPresent(false)
+{
+}
 
 void RFIDModule::begin() {
+    Serial.println(F("[RFID] Initialisation SPI + MFRC522"));
     SPI.begin();
     mfrc522.PCD_Init();
-    cardAvailable = false;
+    Serial.println(F("[RFID] Module prêt"));
 }
 
 bool RFIDModule::poll() {
-    cardAvailable = false;
+    // Vérifie s'il y a une carte présente
+    bool newCardPresent = mfrc522.PICC_IsNewCardPresent();
 
-    if (!mfrc522.PICC_IsNewCardPresent()) {
+    // Si aucune carte, réinitialiser le flag précédent
+    if (!newCardPresent) {
+        cardPreviouslyPresent = false;
+        cardAvailable = false;
         return false;
     }
 
+    // Si la carte est encore présente mais qu'on n'a pas attendu le retrait, ne pas relire
+    if (cardPreviouslyPresent) {
+        cardAvailable = false;
+        return false;
+    }
+
+    // Lire la carte
     if (!mfrc522.PICC_ReadCardSerial()) {
+        Serial.println(F("[RFID] Erreur lecture UID"));
         return false;
     }
 
-    uint8_t len = min((uint8_t)UID_SIZE, mfrc522.uid.size);
-    for (uint8_t i = 0; i < len; i++) {
-        uid[i] = mfrc522.uid.uidByte[i];
+    // Copier UID
+    for (uint8_t i = 0; i < UID_SIZE; i++) {
+        if (i < mfrc522.uid.size) {
+            uid[i] = mfrc522.uid.uidByte[i];
+        } else {
+            uid[i] = 0x00;
+        }
     }
 
-    // Padding si UID < 5 octets
-    for (uint8_t i = len; i < UID_SIZE; i++) {
-        uid[i] = 0x00;
-    }
+    Serial.print(F("[RFID] Carte détectée UID: "));
+    printUID(uid);
 
+    // Marquer carte disponible et mémoire de présence
     cardAvailable = true;
+    cardPreviouslyPresent = true;
+
     return true;
 }
 
@@ -40,12 +61,24 @@ bool RFIDModule::hasNewCard() const {
 }
 
 void RFIDModule::getUID(uint8_t *buffer) {
-    for (uint8_t i = 0; i < UID_SIZE; i++) {
-        buffer[i] = uid[i];
-    }
+    if (!buffer) return;
+
+    memcpy(buffer, uid, UID_SIZE);
+    Serial.print(F("[RFID] UID fourni: "));
+    printUID(uid);
 }
 
 void RFIDModule::halt() {
+    Serial.println(F("[RFID] Halt carte"));
     mfrc522.PICC_HaltA();
     mfrc522.PCD_StopCrypto1();
+}
+
+void RFIDModule::printUID(const uint8_t *uid) {
+    for (uint8_t i = 0; i < UID_SIZE; i++) {
+        if (uid[i] < 0x10) Serial.print('0');
+        Serial.print(uid[i], HEX);
+        Serial.print(' ');
+    }
+    Serial.println();
 }

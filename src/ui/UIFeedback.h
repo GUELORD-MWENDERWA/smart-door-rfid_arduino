@@ -3,13 +3,17 @@
 
 #include <Arduino.h>
 
-enum class FeedbackType {
+enum class FeedbackType : uint8_t {
     ACCESS_GRANTED,
     ACCESS_DENIED,
     BADGE_ADDED,
     BADGE_DELETED,
+    SCAN_BADGE,
+    CONFIRM_RESET,
     RESET_DONE,
-    ERROR
+    ERROR,
+    LOCKED,
+    CANCELLED          
 };
 
 class UIFeedback {
@@ -26,6 +30,7 @@ private:
 
     void blinkLED(uint8_t ledPin, uint8_t times, uint16_t duration);
     void beep(uint16_t freq, uint16_t duration);
+    const char* feedbackToString(FeedbackType type);
 };
 
 #endif

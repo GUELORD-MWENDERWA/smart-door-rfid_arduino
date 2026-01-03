@@ -3,24 +3,45 @@
 
 #include <Arduino.h>
 #include <Keypad.h>
-#include <EEPROM.h>
 
 class KeypadModule {
 public:
-    KeypadModule(char* keysMap, byte* rowPins, byte* colPins, byte rows, byte cols, const char* defaultPIN="123");
+    static const uint8_t MAX_ATTEMPTS = 5;
+
+    KeypadModule(char* keysMap,
+                 byte* rowPins,
+                 byte* colPins,
+                 byte rows,
+                 byte cols,
+                 const char* defaultPIN = "123",
+                 uint8_t buzzerPin = 255);
 
     void begin();
-    void update();                    // à appeler dans loop()
-    bool isCommandReady() const;
-    String getCommand();              // retourne commande complète entrée avec #
+    void update();
 
-    bool checkAdminPIN(const String& pin);
+    bool isCommandReady() const;
+    String getCommand();                  // retourne la commande SANS '#'
+
+    bool checkAdminPIN(String pin);       // pin attendu sans '#'
+    bool changeAdminPIN(const String& newPin);
+
+    uint8_t getRemainingAttempts() const;
+    bool isLocked() const;
 
 private:
     Keypad keypad;
+
     String inputBuffer;
     String adminPIN;
+
     bool commandReady;
+    uint8_t attemptsLeft;
+    bool locked;
+
+    uint8_t buzzer;
+
+    void resetBuffer();
+    void beep(uint16_t freq, uint16_t duration);
 };
 
 #endif

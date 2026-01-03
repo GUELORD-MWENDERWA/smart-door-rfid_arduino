@@ -3,53 +3,60 @@
 
 #include <Arduino.h>
 
-/* --- États système --- */
+/* ===== États du système ===== */
 enum class SystemState : uint8_t {
-    IDLE,           // Attente d'événements (badge ou commande)
-    RFID_READ,      // Lecture d'un badge RFID
-    INPUT_CMD,      // Lecture d'une commande Keypad
-    AUTH_ADMIN,     // Attente validation PIN admin
-    VALIDATE,       // Validation badge
-    VALIDATE_CMD,   // Validation commande
-    EXECUTE,        // Exécution action (porte, CRUD)
-    FEEDBACK        // Feedback utilisateur
+    IDLE,
+    RFID_READ,
+    INPUT_CMD,
+    VALIDATE,
+    VALIDATE_CMD,
+    EXECUTE,
+    FEEDBACK,
+
+    WAIT_ADD_BADGE,
+    WAIT_REMOVE_BADGE,
+    WAIT_RESET_CONFIRM
 };
 
-/* --- Actions FSM --- */
+/* ===== Actions FSM ===== */
 enum class FSMAction : uint8_t {
-    NONE,               // Aucune action
-    VALIDATE_BADGE,     // Vérifier badge RFID
-    REQUEST_ADMIN_AUTH, // Demander authentification admin
-    EXECUTE_COMMAND,    // Exécuter commande Keypad
-    OPEN_DOOR,          // Ouvrir la porte / relais
-    SEND_FEEDBACK       // Signaler résultat via LED/Buzzer/JSON
+    NONE,
+    VALIDATE_BADGE,
+    REQUEST_ADMIN_AUTH,
+    EXECUTE_COMMAND,
+    OPEN_DOOR,
+    SEND_FEEDBACK
 };
 
-/* --- Contrôleur FSM --- */
 class FSMController {
 public:
     FSMController();
 
-    /* --- Cycle principal --- */
     void update();
 
-    /* --- Événements externes --- */
-    void onBadgeDetected();                 // Badge détecté
-    void onCommandDetected();               // Commande saisie
-    void onAdminAuthResult(bool success);   // Résultat PIN admin
-    void onBadgeValidationResult(bool success);  // Résultat validation badge
-    void onCommandValidationResult(bool success); // Résultat validation commande
-    void onExecutionDone();                 // Fin d’exécution
+    void onBadgeDetected();
+    void onCommandDetected();
+    void onAdminAuthResult(bool success);
+    void onBadgeValidationResult(bool success);
+    void onCommandValidationResult(bool success);
+    void onExecutionDone();
 
-    /* --- Sorties FSM --- */
-    FSMAction getAction() const;            // Action à exécuter
-    SystemState getState() const;           // État courant
-    void clearAction();                     // Réinitialiser action après exécution
+    FSMAction getAction() const;
+    SystemState getState() const;
+
+    void clearAction();
+    void setState(SystemState newState);
 
 private:
-    SystemState state;  // État courant
-    FSMAction action;   // Action courante
-    bool lastResult;    // Dernier résultat (validation)
+    SystemState state;
+    FSMAction action;
+    bool lastResult;
+
+    SystemState lastState;
+    FSMAction lastAction;
+
+    const char* stateToStr(SystemState s);
+    const char* actionToStr(FSMAction a);
 };
 
 #endif
