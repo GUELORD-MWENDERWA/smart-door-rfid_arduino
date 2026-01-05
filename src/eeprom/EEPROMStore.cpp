@@ -1,4 +1,6 @@
 #include "EEPROMStore.h"
+#include "config.h"
+
 
 /* ===== EEPROM LAYOUT =====
    [MAGIC]
@@ -8,10 +10,10 @@
 */
 
 void EEPROMStore::begin() {
-    Serial.println(F("[EEPROM] Initialisation"));
+    DEBUG_PRINTLN(F("[EEPROM] Initialisation"));
 
     if (EEPROM.read(EEPROM_MAGIC_ADDR) != EEPROM_MAGIC) {
-        Serial.println(F("[EEPROM] Magic incorrect -> RESET"));
+        DEBUG_PRINTLN(F("[EEPROM] Magic incorrect -> RESET"));
         reset();
         EEPROM.write(EEPROM_MAGIC_ADDR, EEPROM_MAGIC);
         writeAdminPIN(DEFAULT_ADMIN_PIN);
@@ -19,7 +21,7 @@ void EEPROMStore::begin() {
 
     badgeCount = EEPROM.read(EEPROM_COUNT_ADDR);
     if (badgeCount > MAX_BADGES) {
-        Serial.println(F("[EEPROM] Badge count invalide -> RESET"));
+        DEBUG_PRINTLN(F("[EEPROM] Badge count invalide -> RESET"));
         reset();
         writeAdminPIN(DEFAULT_ADMIN_PIN);
     }
@@ -29,12 +31,12 @@ void EEPROMStore::begin() {
     */
     String pin = readAdminPIN();
     if (pin.length() == 0) {
-        Serial.println(F("[EEPROM] PIN admin manquant -> PIN par défaut"));
+        DEBUG_PRINTLN(F("[EEPROM] PIN admin manquant -> PIN par défaut"));
         writeAdminPIN(DEFAULT_ADMIN_PIN);
     }
 
-    Serial.print(F("[EEPROM] Badges chargés: "));
-    Serial.println(badgeCount);
+    DEBUG_PRINT(F("[EEPROM] Badges chargés: "));
+    DEBUG_PRINTLN(badgeCount);
 }
 
 /* ===== ADMIN PIN ===== */
@@ -81,11 +83,11 @@ bool EEPROMStore::compareUID(const uint8_t *a, const uint8_t *b) {
 
 void EEPROMStore::debugUID(const uint8_t *uid) {
     for (uint8_t i = 0; i < UID_SIZE; i++) {
-        if (uid[i] < 0x10) Serial.print('0');
-        Serial.print(uid[i], HEX);
-        Serial.print(' ');
+        if (uid[i] < 0x10) DEBUG_PRINT('0');
+        DEBUG_PRINT(uid[i], HEX);
+        DEBUG_PRINT(' ');
     }
-    Serial.println();
+    DEBUG_PRINTLN();
 }
 
 bool EEPROMStore::badgeExists(const uint8_t *uid) {

@@ -1,4 +1,6 @@
 #include "RelayController.h"
+#include "config.h"
+
 
 RelayController::RelayController(uint8_t pin, uint16_t openDurationMs)
     : relayPin(pin),
@@ -9,20 +11,20 @@ RelayController::RelayController(uint8_t pin, uint16_t openDurationMs)
 }
 
 void RelayController::begin() {
-    Serial.println(F("[RELAY] Initialisation"));
+    DEBUG_PRINTLN(F("[RELAY] Initialisation"));
 
     pinMode(relayPin, OUTPUT);
     digitalWrite(relayPin, LOW);
 
-    Serial.print(F("[RELAY] Pin="));
-    Serial.print(relayPin);
-    Serial.print(F(" Duration(ms)="));
-    Serial.println(duration);
+    DEBUG_PRINT(F("[RELAY] Pin="));
+    DEBUG_PRINT(relayPin);
+    DEBUG_PRINT(F(" Duration(ms)="));
+    DEBUG_PRINTLN(duration);
 }
 
 void RelayController::open() {
     if (state) {
-        Serial.println(F("[RELAY] Open ignored (already open)"));
+        DEBUG_PRINTLN(F("[RELAY] Open ignored (already open)"));
         return;
     }
 
@@ -30,7 +32,7 @@ void RelayController::open() {
     openTimestamp = millis();
     digitalWrite(relayPin, HIGH);
 
-    Serial.println(F("[RELAY] OPEN -> relay activated"));
+    DEBUG_PRINTLN(F("[RELAY] OPEN -> relay activated"));
 }
 
 void RelayController::update() {
@@ -41,7 +43,7 @@ void RelayController::update() {
         state = false;
         digitalWrite(relayPin, LOW);
 
-        Serial.println(F("[RELAY] CLOSE -> relay deactivated"));
+        DEBUG_PRINTLN(F("[RELAY] CLOSE -> relay deactivated"));
     }
 }
 

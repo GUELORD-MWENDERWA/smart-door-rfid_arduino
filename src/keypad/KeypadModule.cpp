@@ -1,4 +1,6 @@
 #include "KeypadModule.h"
+#include "config.h"
+
 
 KeypadModule::KeypadModule(char* keysMap,
                            byte* rowPins,
@@ -18,12 +20,12 @@ KeypadModule::KeypadModule(char* keysMap,
 }
 
 void KeypadModule::begin() {
-    Serial.println(F("[KEYPAD] Initialisation"));
+    DEBUG_PRINTLN(F("[KEYPAD] Initialisation"));
     inputBuffer.reserve(16);
     resetBuffer();
 
-    Serial.print(F("[KEYPAD] PIN admin configuré | Tentatives="));
-    Serial.println(attemptsLeft);
+    DEBUG_PRINT(F("[KEYPAD] PIN admin configuré | Tentatives="));
+    DEBUG_PRINTLN(attemptsLeft);
 
     if (buzzer != 255) {
         pinMode(buzzer, OUTPUT);
@@ -38,8 +40,8 @@ void KeypadModule::update() {
 
     beep(3000, 40);
 
-    Serial.print(F("[KEYPAD] Touche: "));
-    Serial.println(key);
+    DEBUG_PRINT(F("[KEYPAD] Touche: "));
+    DEBUG_PRINTLN(key);
 
     if (key == '*') {
         resetBuffer();
@@ -48,7 +50,7 @@ void KeypadModule::update() {
 
     if (key == '#') {
         commandReady = true;
-        Serial.println(F("[KEYPAD] Commande complète"));
+        DEBUG_PRINTLN(F("[KEYPAD] Commande complète"));
         return;
     }
 
@@ -64,8 +66,8 @@ String KeypadModule::getCommand() {
 
     String cmd = inputBuffer;
 
-    Serial.print(F("[KEYPAD] Commande lue: "));
-    Serial.println(cmd);
+    DEBUG_PRINT(F("[KEYPAD] Commande lue: "));
+    DEBUG_PRINTLN(cmd);
 
     resetBuffer();
     return cmd;
@@ -76,11 +78,11 @@ bool KeypadModule::checkAdminPIN(String pin) {
 
     pin.trim();
 
-    Serial.print(F("[KEYPAD] Vérification PIN: "));
-    Serial.println(pin);
+    DEBUG_PRINT(F("[KEYPAD] Vérification PIN: "));
+    DEBUG_PRINTLN(pin);
 
     if (pin == adminPIN) {
-        Serial.println(F("[KEYPAD] PIN OK"));
+        DEBUG_PRINTLN(F("[KEYPAD] PIN OK"));
         attemptsLeft = MAX_ATTEMPTS;
         beep(2000, 150);
         resetBuffer();
@@ -90,14 +92,14 @@ bool KeypadModule::checkAdminPIN(String pin) {
     attemptsLeft--;
     beep(400, 300);
 
-    Serial.print(F("[KEYPAD] PIN incorrect | Tentatives restantes: "));
-    Serial.println(attemptsLeft);
+    DEBUG_PRINT(F("[KEYPAD] PIN incorrect | Tentatives restantes: "));
+    DEBUG_PRINTLN(attemptsLeft);
 
     resetBuffer();
 
     if (attemptsLeft == 0) {
         locked = true;
-        Serial.println(F("[KEYPAD] CLAVIER BLOQUÉ"));
+        DEBUG_PRINTLN(F("[KEYPAD] CLAVIER BLOQUÉ"));
     }
 
     return false;
@@ -108,18 +110,18 @@ bool KeypadModule::checkAdminPIN(String pin) {
 */
 bool KeypadModule::changeAdminPIN(const String& newPin) {
     if (newPin.length() < 3 || newPin.length() > 8) {
-        Serial.println(F("[KEYPAD] Nouveau PIN invalide"));
+        DEBUG_PRINTLN(F("[KEYPAD] Nouveau PIN invalide"));
         return false;
     }
 
     if (newPin.length() == 0) {
-        Serial.println(F("[KEYPAD] PIN vide ignoré"));
+        DEBUG_PRINTLN(F("[KEYPAD] PIN vide ignoré"));
         return false;
     }
 
     adminPIN = newPin;
-    Serial.print(F("[KEYPAD] Nouveau PIN admin défini: "));
-    Serial.println(adminPIN);
+    DEBUG_PRINT(F("[KEYPAD] Nouveau PIN admin défini: "));
+    DEBUG_PRINTLN(adminPIN);
 
     return true;
 }

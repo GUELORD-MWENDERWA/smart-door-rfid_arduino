@@ -1,4 +1,6 @@
 #include "FSMController.h"
+#include "config.h"
+
 
 FSMController::FSMController()
     : state(SystemState::IDLE),
@@ -7,16 +9,16 @@ FSMController::FSMController()
       lastState(SystemState::IDLE),
       lastAction(FSMAction::NONE)
 {
-    Serial.println(F("[FSM] Init -> IDLE"));
+    DEBUG_PRINTLN(F("[FSM] Init -> IDLE"));
 }
 
 void FSMController::update() {
 
     if (state != lastState || action != lastAction) {
-        Serial.print(F("[FSM] State="));
-        Serial.print(stateToStr(state));
-        Serial.print(F(" | Action="));
-        Serial.println(actionToStr(action));
+        DEBUG_PRINT(F("[FSM] State="));
+        DEBUG_PRINT(stateToStr(state));
+        DEBUG_PRINT(F(" | Action="));
+        DEBUG_PRINTLN(actionToStr(action));
         lastState = state;
         lastAction = action;
     }

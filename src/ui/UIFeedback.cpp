@@ -1,4 +1,5 @@
 #include "UIFeedback.h"
+#include "config.h"
 
 UIFeedback::UIFeedback(uint8_t ledGreen, uint8_t ledRed, uint8_t buzzerPin)
     : ledG(ledGreen), ledR(ledRed), buzz(buzzerPin)
@@ -13,18 +14,18 @@ void UIFeedback::begin() {
     digitalWrite(ledG, LOW);
     digitalWrite(ledR, LOW);
 
-    Serial.print(F("[UI] LED GREEN PIN="));
-    Serial.print(ledG);
-    Serial.print(F(" LED RED PIN="));
-    Serial.print(ledR);
-    Serial.print(F(" BUZZER PIN="));
-    Serial.println(buzz);
+    DEBUG_PRINT(F("[UI] LED GREEN PIN="));
+    DEBUG_PRINT(ledG);
+    DEBUG_PRINT(F(" LED RED PIN="));
+    DEBUG_PRINT(ledR);
+    DEBUG_PRINT(F(" BUZZER PIN="));
+    DEBUG_PRINTLN(buzz);
 }
 
 void UIFeedback::signal(FeedbackType type) {
 
-    Serial.print(F("[UI] Feedback: "));
-    Serial.println(feedbackToString(type));
+    DEBUG_PRINT(F("[UI] Feedback: "));
+    DEBUG_PRINTLN(feedbackToString(type));
 
     switch (type) {
 

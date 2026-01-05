@@ -1,4 +1,6 @@
 #include "RFIDModule.h"
+#include "config.h"
+
 
 RFIDModule::RFIDModule(uint8_t ssPin, uint8_t rstPin)
     : mfrc522(ssPin, rstPin),
@@ -8,10 +10,10 @@ RFIDModule::RFIDModule(uint8_t ssPin, uint8_t rstPin)
 }
 
 void RFIDModule::begin() {
-    Serial.println(F("[RFID] Initialisation SPI + MFRC522"));
+    DEBUG_PRINTLN(F("[RFID] Initialisation SPI + MFRC522"));
     SPI.begin();
     mfrc522.PCD_Init();
-    Serial.println(F("[RFID] Module prêt"));
+    DEBUG_PRINTLN(F("[RFID] Module prêt"));
 }
 
 bool RFIDModule::poll() {
@@ -33,7 +35,7 @@ bool RFIDModule::poll() {
 
     // Lire la carte
     if (!mfrc522.PICC_ReadCardSerial()) {
-        Serial.println(F("[RFID] Erreur lecture UID"));
+        DEBUG_PRINTLN(F("[RFID] Erreur lecture UID"));
         return false;
     }
 
@@ -46,7 +48,7 @@ bool RFIDModule::poll() {
         }
     }
 
-    Serial.print(F("[RFID] Carte détectée UID: "));
+    DEBUG_PRINT(F("[RFID] Carte détectée UID: "));
     printUID(uid);
 
     // Marquer carte disponible et mémoire de présence
@@ -64,21 +66,21 @@ void RFIDModule::getUID(uint8_t *buffer) {
     if (!buffer) return;
 
     memcpy(buffer, uid, UID_SIZE);
-    Serial.print(F("[RFID] UID fourni: "));
+    DEBUG_PRINT(F("[RFID] UID fourni: "));
     printUID(uid);
 }
 
 void RFIDModule::halt() {
-    Serial.println(F("[RFID] Halt carte"));
+    DEBUG_PRINTLN(F("[RFID] Halt carte"));
     mfrc522.PICC_HaltA();
     mfrc522.PCD_StopCrypto1();
 }
 
 void RFIDModule::printUID(const uint8_t *uid) {
     for (uint8_t i = 0; i < UID_SIZE; i++) {
-        if (uid[i] < 0x10) Serial.print('0');
-        Serial.print(uid[i], HEX);
-        Serial.print(' ');
+        if (uid[i] < 0x10) DEBUG_PRINT('0');
+        DEBUG_PRINT(uid[i], HEX);
+        DEBUG_PRINT(' ');
     }
-    Serial.println();
+    DEBUG_PRINTLN();
 }

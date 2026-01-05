@@ -8,12 +8,14 @@
 #include "relay/RelayController.h"
 #include "comm/JsonComm.h"
 
+#include "config.h"
+
 /* ===== PINS ===== */
 const uint8_t SS_PIN     = 10;
 const uint8_t RST_PIN    = 9;
 const uint8_t LED_GREEN  = 7;
 const uint8_t LED_RED    = 6;
-const uint8_t BUZZER     = 2;
+const uint8_t BUZZER     = 4;
 const uint8_t RELAY_PIN  = 8;
 
 /* ===== KEYPAD 4x4 ===== */
@@ -42,8 +44,8 @@ JsonComm        comm(Serial);
 FSMController fsm;
 
 void setup() {
-    Serial.begin(9600);
-    Serial.println(F("\n=== SYSTEM START ==="));
+    Serial.begin(115200);
+    DEBUG_PRINTLN(F("\n=== SYSTEM START ==="));
 
     eeprom.begin();
     rfid.begin();
@@ -53,12 +55,32 @@ void setup() {
     keypad.changeAdminPIN(eeprom.readAdminPIN()); // <-- synchronisation PIN EEPROM / KeypadModule
     comm.begin();
 
-    Serial.println(F("[SETUP] Init complete"));
+    DEBUG_PRINTLN(F("[SETUP] Init complete"));
 }
 
 void loop() {
     keypad.update();
     relay.update();
+
+    /* =====================================================
+       ETAT PORTE – FEEDBACK TEMPS RÉEL (OUVERT / FERMÉ)
+       ===================================================== */
+    static bool lastDoorState = false;
+    bool currentDoorState = relay.isOpen();
+
+    if (currentDoorState != lastDoorState) {
+        StaticJsonDocument<128> doc;
+        doc["type"] = "door_state";
+
+        if (currentDoorState) {
+            doc["state"] = "opened";
+        } else {
+            doc["state"] = "closed";
+        }
+
+        comm.sendResponse(doc);
+        lastDoorState = currentDoorState;
+    }
 
     /* =====================================================
        SERIAL JSON = SOURCE DE COMMANDE ALTERNATIVE AU KEYPAD
@@ -67,7 +89,7 @@ void loop() {
     static String serialCmd = "";
 
     if (!serialCmdReady) {
-        DynamicJsonDocument rxDoc(256);
+        StaticJsonDocument<256> rxDoc;
 
         if (comm.receiveCommand(rxDoc)) {
             if (rxDoc.containsKey("cmd")) {
@@ -76,8 +98,8 @@ void loop() {
 
                 if (serialCmd.length() > 0) {
                     serialCmdReady = true;
-                    Serial.print(F("[SERIAL CMD READY] "));
-                    Serial.println(serialCmd);
+                    DEBUG_PRINT(F("[SERIAL CMD READY] "));
+                    DEBUG_PRINTLN(serialCmd);
                 }
             }
         }
@@ -109,7 +131,7 @@ void loop() {
             bool ok = eeprom.badgeExists(uid);
             fsm.onBadgeValidationResult(ok);
 
-            DynamicJsonDocument doc(128);
+            StaticJsonDocument<128> doc;
             doc["status"] = ok ? "success" : "error";
             doc["type"] = "badge";
             doc["access_granted"] = ok;
@@ -136,7 +158,7 @@ void loop() {
             bool ok = keypad.checkAdminPIN(cmd);
             fsm.onAdminAuthResult(ok);
 
-            DynamicJsonDocument doc(128);
+            StaticJsonDocument<128> doc;
             doc["status"] = ok ? "success" : "error";
             doc["type"] = "admin_auth";
             doc["access_granted"] = ok;
@@ -164,7 +186,19 @@ void loop() {
             DynamicJsonDocument doc(256);
             doc["type"] = "command";
 
-            if (cmd == "11") {
+            /* ===== OUVERTURE MANUELLE PORTE ===== */
+            if (cmd == "10") {
+                relay.open();
+                ui.signal(FeedbackType::ACCESS_GRANTED);
+
+                doc["status"] = "success";
+                doc["action"] = "open_door";
+
+                comm.sendResponse(doc);
+                fsm.onExecutionDone();
+            }
+
+            else if (cmd == "11") {
                 ui.signal(FeedbackType::SCAN_BADGE);
                 fsm.setState(SystemState::WAIT_ADD_BADGE);
                 fsm.clearAction();
@@ -237,7 +271,7 @@ void loop() {
             relay.open();
             ui.signal(FeedbackType::ACCESS_GRANTED);
 
-            DynamicJsonDocument doc(128);
+            StaticJsonDocument<128> doc;
             doc["status"] = "success";
             doc["action"] = "open_door";
             comm.sendResponse(doc);
@@ -249,7 +283,7 @@ void loop() {
         case FSMAction::SEND_FEEDBACK: {
             ui.signal(FeedbackType::ACCESS_DENIED);
 
-            DynamicJsonDocument doc(128);
+            StaticJsonDocument<128> doc;
             doc["status"] = "error";
             doc["action"] = "access_denied";
             comm.sendResponse(doc);
@@ -273,7 +307,7 @@ void loop() {
                 bool ok = eeprom.addBadge(uid);
                 ui.signal(ok ? FeedbackType::BADGE_ADDED : FeedbackType::ERROR);
 
-                DynamicJsonDocument doc(128);
+                StaticJsonDocument<128> doc;
                 doc["status"] = ok ? "success" : "error";
                 doc["type"] = "add_badge";
                 comm.sendResponse(doc);
@@ -292,7 +326,7 @@ void loop() {
                 bool ok = eeprom.removeBadge(uid);
                 ui.signal(ok ? FeedbackType::BADGE_DELETED : FeedbackType::ERROR);
 
-                DynamicJsonDocument doc(128);
+                StaticJsonDocument<128> doc;
                 doc["status"] = ok ? "success" : "error";
                 doc["type"] = "remove_badge";
                 comm.sendResponse(doc);
@@ -317,7 +351,7 @@ void loop() {
 
             cmd.replace("#", "");
 
-            DynamicJsonDocument doc(128);
+            StaticJsonDocument<128> doc;
             doc["type"] = "reset";
 
             if (cmd == "99") {
