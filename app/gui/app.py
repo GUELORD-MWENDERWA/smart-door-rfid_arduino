@@ -30,33 +30,34 @@ class DoorApp(ctk.CTk):
         self.link.on_message = self.on_message
         self.link.on_status = self.on_status
 
-        self.pending_payload = None
-        self.badge_window = None
+        self.pending_payload: dict | None = None
+        self.badge_window: BadgeWait | None = None
+        self._command_in_progress: bool = False
 
         # ================= Status bar =================
         self.status_bar = StatusBar(self)
         self.status_bar.pack(fill="x", padx=10, pady=5)
 
         # ================= Connexion =================
-        conn_frame = ctk.CTkFrame(self)
-        conn_frame.pack(fill="x", padx=10, pady=5)
+        conn = ctk.CTkFrame(self)
+        conn.pack(fill="x", padx=10, pady=5)
 
         self.port_box = ctk.CTkComboBox(
-            conn_frame,
+            conn,
             values=SerialLink.list_ports(),
             width=140
         )
         self.port_box.pack(side="left", padx=5)
 
         ctk.CTkButton(
-            conn_frame,
+            conn,
             text="Rafraîchir",
             command=self.refresh_ports,
             width=90
         ).pack(side="left", padx=5)
 
         ctk.CTkButton(
-            conn_frame,
+            conn,
             text="Connecter",
             command=self.connect,
             width=100
@@ -66,15 +67,23 @@ class DoorApp(ctk.CTk):
         self.dashboard = Dashboard(self)
         self.dashboard.pack(fill="x", padx=10, pady=10)
 
-        # ================= Actions =================
-        actions = ctk.CTkFrame(self)
-        actions.pack(fill="x", padx=10, pady=5)
+        # ================= Actions ligne 1 =================
+        actions1 = ctk.CTkFrame(self)
+        actions1.pack(fill="x", padx=10, pady=5)
 
-        self._action_button(actions, "Ouvrir la porte", Protocol.OPEN_DOOR)
-        self._action_button(actions, "Ajouter badge", Protocol.ADD_BADGE)
-        self._action_button(actions, "Supprimer badge", Protocol.REMOVE_BADGE)
-        self._action_button(actions, "Lister badges", Protocol.LIST_BADGES)
-        self._action_button(actions, "Reset EEPROM", Protocol.RESET_REQUEST)
+        self._action_button(actions1, "Ouvrir la porte", Protocol.OPEN_DOOR)
+        self._action_button(actions1, "Ajouter badge", Protocol.ADD_BADGE)
+        self._action_button(actions1, "Supprimer badge", Protocol.REMOVE_BADGE)
+        self._action_button(actions1, "Lister badges", Protocol.LIST_BADGES)
+        self._action_button(actions1, "Reset EEPROM", Protocol.RESET_REQUEST)
+
+        # ================= Actions ligne 2 =================
+        actions2 = ctk.CTkFrame(self)
+        actions2.pack(fill="x", padx=10, pady=5)
+
+        self._action_button(actions2, "Confirmer Reset", Protocol.CONFIRM_RESET)
+        self._action_button(actions2, "Annuler Reset", Protocol.CANCEL_RESET)
+        self._action_button(actions2, "Changer PIN", Protocol.change_pin("0000"))
 
         # ================= Log =================
         self.log = LogPanel(self)
@@ -87,18 +96,18 @@ class DoorApp(ctk.CTk):
         ctk.CTkButton(
             parent,
             text=label,
-            command=lambda p=payload: self.admin_guard(p),
-            width=180
+            width=180,
+            command=lambda p=payload: self.admin_guard(p)
         ).pack(side="left", padx=5, pady=5)
 
     def refresh_ports(self):
         self.port_box.configure(values=SerialLink.list_ports())
 
     # ==================================================
-    # Serial control
+    # Serial
     # ==================================================
     def connect(self):
-        port = self.port_box.get()
+        port = self.port_box.get().strip()
         if not port:
             messagebox.showwarning("Port", "Veuillez sélectionner un port série")
             return
@@ -109,40 +118,52 @@ class DoorApp(ctk.CTk):
         self.status_bar.set_connected(connected)
 
         if connected:
-            self.log.log("[INFO] Connecté au port série")
+            self.log.log("[INFO] Arduino connecté")
         else:
-            self.log.log("[INFO] Déconnecté du port série")
+            self.log.log("[INFO] Arduino déconnecté")
+            AppState.reset_admin()
+            self._command_in_progress = False
 
     # ==================================================
-    # Admin guard
+    # Admin guard + gestion commandes en cours
     # ==================================================
     def admin_guard(self, payload: dict):
-        if not AppState.admin_authenticated:
+        if not AppState.connected:
+            messagebox.showwarning("Connexion", "Arduino non connecté")
+            return
+
+        if self._command_in_progress:
+            self.log.log("[INFO] Commande précédente non terminée")
+            return
+
+        self._command_in_progress = True
+        self.pending_payload = payload
+
+        # Si admin pas encore authentifié et la commande nécessite admin
+        if not AppState.admin_authenticated and payload not in (Protocol.CONFIRM_RESET, Protocol.CANCEL_RESET):
             dlg = AdminDialog()
             pin = dlg.get_input()
-
             if not pin:
+                self._command_in_progress = False
                 return
-
-            self.pending_payload = payload
             self.link.send(Protocol.admin_auth(pin))
         else:
             self.link.send(payload)
+            self._post_command_ui(payload)
 
-            if payload in (Protocol.ADD_BADGE, Protocol.REMOVE_BADGE):
-                self.show_badge_wait()
+    def _post_command_ui(self, payload: dict):
+        if payload in (Protocol.ADD_BADGE, Protocol.REMOVE_BADGE):
+            self.show_badge_wait()
 
     def show_badge_wait(self):
         if self.badge_window:
             return
-
-        self.badge_window = BadgeWait(
-            self,
-            on_cancel=self.cancel_badge_wait
-        )
+        self.badge_window = BadgeWait(self, on_cancel=self.cancel_badge_wait)
 
     def cancel_badge_wait(self):
-        self.badge_window = None
+        if self.badge_window:
+            self.badge_window.destroy()
+            self.badge_window = None
 
     # ==================================================
     # Messages Arduino
@@ -150,38 +171,48 @@ class DoorApp(ctk.CTk):
     def on_message(self, msg: dict):
         self.log.log(str(msg))
 
+        msg_type = msg.get("type")
+        status = msg.get("status")
+
         # ---- Door state ----
-        if msg.get("type") == "door_state":
+        if msg_type == "door_state":
             self.dashboard.set_state(msg.get("state", "unknown"))
 
         # ---- Admin auth ----
-        if msg.get("type") == "admin_auth":
+        elif msg_type == "admin_auth":
             if msg.get("access_granted"):
                 AppState.set_admin()
                 if self.pending_payload:
                     self.link.send(self.pending_payload)
-
-                    if self.pending_payload in (
-                        Protocol.ADD_BADGE,
-                        Protocol.REMOVE_BADGE
-                    ):
-                        self.show_badge_wait()
+                    self._post_command_ui(self.pending_payload)
             else:
-                messagebox.showerror("Erreur", "PIN admin incorrect")
+                AppState.reset_admin()
+                messagebox.showerror("Admin", "PIN incorrect")
+                self._command_in_progress = False
 
-        # ---- Badge done / reset ----
-        if msg.get("type") in ("add_badge", "remove_badge", "reset"):
+        # ---- Badge / reset finished ----
+        elif msg_type in ("add_badge", "remove_badge", "reset"):
             AppState.reset_admin()
-            if self.badge_window:
-                self.badge_window.destroy()
-                self.badge_window = None
+            self.cancel_badge_wait()
+            self._command_in_progress = False
+
+        # ---- Command finished ----
+        elif msg_type == "command":
+            # Mettre à jour état porte si open/close
+            if msg.get("action") == "open_door":
+                self.dashboard.set_state("opened")
+            self._command_in_progress = False
+            # Reset admin si nécessaire
+            if status in ("success", "error"):
+                AppState.reset_admin()
 
         # ---- Error ----
-        if msg.get("status") == "error":
+        if status == "error":
             messagebox.showerror(
                 "Erreur Arduino",
                 msg.get("message", "Erreur inconnue")
             )
+            self._command_in_progress = False
 
     # ==================================================
     # Clean exit
@@ -189,6 +220,6 @@ class DoorApp(ctk.CTk):
     def destroy(self):
         try:
             self.link.stop()
-        except:
+        except Exception:
             pass
         super().destroy()
