@@ -1,5 +1,5 @@
 #include "KeypadModule.h"
-#include "config.h"
+#include "../config.h"
 
 
 KeypadModule::KeypadModule(char* keysMap,

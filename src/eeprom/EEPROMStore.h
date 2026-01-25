@@ -3,45 +3,62 @@
 
 #include <Arduino.h>
 #include <EEPROM.h>
+#include "../config.h"
+
+/*
+  EEPROMStore
+  - Provides safe read/write for admin PIN and badge list.
+  - Simple layout with magic/version, admin PIN, badge count, badges, crc16.
+  - UID_SIZE matches RFIDModule::UID_SIZE (5).
+  - API kept compatible with existing main.cpp usages:
+      begin()
+      readAdminPIN() -> String
+      writeAdminPIN(const String&)
+      addBadge(const uint8_t *uid)
+      removeBadge(const uint8_t *uid)
+      badgeExists(const uint8_t *uid)
+      getBadgeCount()
+      reset()
+*/
 
 class EEPROMStore {
 public:
-    static const uint8_t UID_SIZE   = 5;
-    static const uint8_t MAX_BADGES = 50;
+    static const uint8_t UID_SIZE = 5;
+    static const uint16_t MAX_BADGES = 50; // safe default; adapt to EEPROM size
 
-    /* ===== ADMIN PIN ===== */
-    static const uint8_t ADMIN_PIN_LEN = 8;
-    static constexpr const char* DEFAULT_ADMIN_PIN = "123";
+    EEPROMStore();
 
     void begin();
 
-    /* ----- Admin PIN ----- */
-    void writeAdminPIN(const String& pin);
     String readAdminPIN();
+    bool writeAdminPIN(const String &pin);
 
-    /* ----- Badges ----- */
     bool addBadge(const uint8_t *uid);
     bool removeBadge(const uint8_t *uid);
     bool badgeExists(const uint8_t *uid);
 
-    uint8_t getBadgeCount();
+    uint16_t getBadgeCount();
 
     void reset();
 
 private:
-    /* ===== EEPROM MAP ===== */
-    static const int EEPROM_MAGIC_ADDR     = 0;
-    static const uint8_t EEPROM_MAGIC      = 0x42;
+    // Layout offsets (bytes)
+    static const uint16_t OFF_MAGIC = 0;         // uint16_t
+    static const uint16_t OFF_VERSION = 2;       // uint16_t
+    static const uint16_t OFF_ADMINPIN = 4;      // fixed 8 bytes (null-terminated)
+    static const uint16_t OFF_BADGE_COUNT = 12;  // uint16_t
+    static const uint16_t OFF_BADGES = 14;       // badges start here
 
-    static const int EEPROM_COUNT_ADDR     = 1;
-    static const int EEPROM_ADMIN_PIN_ADDR = 2;
-    static const int EEPROM_BASE_ADDR      = EEPROM_ADMIN_PIN_ADDR + ADMIN_PIN_LEN;
+    // Helper low level
+    uint16_t readU16(uint16_t addr);
+    void writeU16(uint16_t addr, uint16_t value);
+    void writeBlock(uint16_t addr, const uint8_t *data, uint16_t len);
+    void readBlock(uint16_t addr, uint8_t *data, uint16_t len);
 
-    uint8_t badgeCount;
+    uint16_t computeCRC16(uint16_t uptoAddr); // compute crc over [0, uptoAddr)
 
-    int badgeAddress(uint8_t index);
-    bool compareUID(const uint8_t *a, const uint8_t *b);
-    void debugUID(const uint8_t *uid);
+    uint16_t badgeAreaSize() const;
+    uint16_t eepromSize() const;
 };
 
-#endif
+#endif // EEPROM_STORE_H

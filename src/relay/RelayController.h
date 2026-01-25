@@ -3,20 +3,28 @@
 
 #include <Arduino.h>
 
+/*
+  RelayController
+  - Non-blocking relay control with open duration handled via millis()
+  - isOpen() returns current relay logical state
+*/
+
 class RelayController {
 public:
-    RelayController(uint8_t pin, uint16_t openDurationMs = 5000);
+    RelayController(uint8_t pin, unsigned long openTimeMs = 5000);
 
     void begin();
-    void open();        // active relais, démarre temporisation
-    void update();      // à appeler dans loop()
+    void update();
+
+    void open();   // open relay (start timer)
+    void close();  // force close
     bool isOpen() const;
 
 private:
-    uint8_t relayPin;
-    uint16_t duration;
-    unsigned long openTimestamp;
-    bool state;
+    uint8_t pin;
+    unsigned long openTime;
+    unsigned long openSince;
+    bool state; // true=open
 };
 
-#endif
+#endif // RELAY_CONTROLLER_H

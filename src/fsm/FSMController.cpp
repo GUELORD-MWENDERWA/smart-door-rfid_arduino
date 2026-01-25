@@ -1,6 +1,9 @@
 #include "FSMController.h"
-#include "config.h"
 
+#ifndef DEBUG_PRINTLN
+#define DEBUG_PRINTLN(x) Serial.println(x)
+#define DEBUG_PRINT(x) Serial.print(x)
+#endif
 
 FSMController::FSMController()
     : state(SystemState::IDLE),
@@ -9,88 +12,64 @@ FSMController::FSMController()
       lastState(SystemState::IDLE),
       lastAction(FSMAction::NONE)
 {
-    DEBUG_PRINTLN(F("[FSM] Init -> IDLE"));
 }
 
 void FSMController::update() {
-
+    // For now FSM update is lightweight: could be extended with timers
+    // Keep lastState/action for debug
     if (state != lastState || action != lastAction) {
-        DEBUG_PRINT(F("[FSM] State="));
-        DEBUG_PRINT(stateToStr(state));
-        DEBUG_PRINT(F(" | Action="));
+        DEBUG_PRINT(F("[FSM] State: "));
+        DEBUG_PRINTLN(stateToStr(state));
+        DEBUG_PRINT(F("[FSM] Action: "));
         DEBUG_PRINTLN(actionToStr(action));
         lastState = state;
         lastAction = action;
     }
-
-    if (action != FSMAction::NONE) return;
-
-    switch (state) {
-
-        case SystemState::RFID_READ:
-            action = FSMAction::VALIDATE_BADGE;
-            break;
-
-        case SystemState::INPUT_CMD:
-            action = FSMAction::REQUEST_ADMIN_AUTH;
-            break;
-
-        case SystemState::VALIDATE:
-            action = lastResult ? FSMAction::OPEN_DOOR
-                                : FSMAction::SEND_FEEDBACK;
-            state = SystemState::FEEDBACK;
-            break;
-
-        case SystemState::VALIDATE_CMD:
-            action = lastResult ? FSMAction::EXECUTE_COMMAND
-                                : FSMAction::SEND_FEEDBACK;
-            state = SystemState::EXECUTE;
-            break;
-
-        case SystemState::FEEDBACK:
-            action = FSMAction::SEND_FEEDBACK;
-            break;
-
-        default:
-            break;
-    }
 }
 
-/* ===== EVENTS ===== */
-
 void FSMController::onBadgeDetected() {
-    if (state == SystemState::IDLE) {
-        state = SystemState::RFID_READ;
-    }
+    // When a badge is detected, request validation
+    action = FSMAction::VALIDATE_BADGE;
 }
 
 void FSMController::onCommandDetected() {
-    if (state == SystemState::IDLE) {
-        state = SystemState::INPUT_CMD;
+    // Trigger admin auth request or execution depending on state
+    action = FSMAction::REQUEST_ADMIN_AUTH; // default; higher level (main) will use action EXECUTE_COMMAND when appropriate
+    // In existing main.cpp the control flow sets action differently; keep compatible by letting main set exact action where necessary
+    // We set REQUEST_ADMIN_AUTH as a neutral signal
+}
+
+void FSMController::onAdminAuthResult(bool success) {
+    lastResult = success;
+    if (success) {
+        action = FSMAction::EXECUTE_COMMAND;
+    } else {
+        action = FSMAction::SEND_FEEDBACK;
     }
 }
 
 void FSMController::onBadgeValidationResult(bool success) {
     lastResult = success;
-    state = SystemState::VALIDATE;
-}
-
-void FSMController::onAdminAuthResult(bool success) {
-    lastResult = success;
-    state = SystemState::VALIDATE_CMD;
+    if (success) {
+        action = FSMAction::OPEN_DOOR;
+    } else {
+        action = FSMAction::SEND_FEEDBACK;
+    }
 }
 
 void FSMController::onCommandValidationResult(bool success) {
     lastResult = success;
-    state = SystemState::EXECUTE;
+    if (success) {
+        action = FSMAction::EXECUTE_COMMAND;
+    } else {
+        action = FSMAction::SEND_FEEDBACK;
+    }
 }
 
 void FSMController::onExecutionDone() {
-    state = SystemState::IDLE;
     action = FSMAction::NONE;
+    state = SystemState::IDLE;
 }
-
-/* ===== OUTPUTS ===== */
 
 FSMAction FSMController::getAction() const {
     return action;
@@ -108,7 +87,7 @@ void FSMController::setState(SystemState newState) {
     state = newState;
 }
 
-/* ===== DEBUG ===== */
+/* ----- debug helpers ----- */
 
 const char* FSMController::stateToStr(SystemState s) {
     switch (s) {

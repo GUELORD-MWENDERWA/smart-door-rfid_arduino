@@ -3,34 +3,36 @@
 
 #include <Arduino.h>
 
+/*
+  UIFeedback
+  - Helper to control LEDs and buzzer for feedback patterns
+*/
+
 enum class FeedbackType : uint8_t {
     ACCESS_GRANTED,
     ACCESS_DENIED,
+    SCAN_BADGE,
     BADGE_ADDED,
     BADGE_DELETED,
-    SCAN_BADGE,
-    CONFIRM_RESET,
     RESET_DONE,
+    CONFIRM_RESET,
     ERROR,
-    LOCKED,
-    CANCELLED          
+    CANCELLED
 };
 
 class UIFeedback {
 public:
-    UIFeedback(uint8_t ledGreen, uint8_t ledRed, uint8_t buzzerPin);
+    UIFeedback(uint8_t ledGreenPin, uint8_t ledRedPin, uint8_t buzzerPin = 255);
 
     void begin();
-    void signal(FeedbackType type);
+    void signal(FeedbackType t);
 
 private:
-    uint8_t ledG;
-    uint8_t ledR;
-    uint8_t buzz;
+    uint8_t ledGreen;
+    uint8_t ledRed;
+    uint8_t buzzer;
 
-    void blinkLED(uint8_t ledPin, uint8_t times, uint16_t duration);
-    void beep(uint16_t freq, uint16_t duration);
-    const char* feedbackToString(FeedbackType type);
+    void toneBeep(uint16_t freq, uint16_t duration);
 };
 
-#endif
+#endif // UI_FEEDBACK_H

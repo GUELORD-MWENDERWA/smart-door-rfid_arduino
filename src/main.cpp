@@ -29,15 +29,15 @@ char keys[ROWS * COLS] = {
     '*','0','#','D'
 };
 
-byte rowPins[ROWS] = {A0, A1, A2, A3};
-byte colPins[COLS] = {A4, A5, 2, 3};
+byte rowPins[ROWS] = { A0, A1, A2, A3 };
+byte colPins[COLS] = { A4, A5, 2, 3 };
 
 /* ===== MODULES ===== */
 EEPROMStore     eeprom;
 RFIDModule      rfid(SS_PIN, RST_PIN);
-RelayController relay(RELAY_PIN, 5000);
+RelayController relay(RELAY_PIN, RELAY_DEFAULT_OPEN_TIME);
 UIFeedback      ui(LED_GREEN, LED_RED, BUZZER);
-KeypadModule    keypad(keys, rowPins, colPins, ROWS, COLS, "123", BUZZER);
+KeypadModule    keypad(keys, rowPins, colPins, ROWS, COLS, DEFAULT_ADMIN_PIN, BUZZER);
 JsonComm        comm(Serial);
 
 /* ===== FSM ===== */
@@ -59,6 +59,7 @@ void setup() {
 }
 
 void loop() {
+    // unchanged logic remains...
     keypad.update();
     relay.update();
 
@@ -77,6 +78,11 @@ void loop() {
         } else {
             doc["state"] = "closed";
         }
+
+        // include a local event id for traceability
+        char evtid[32];
+        comm.generateLocalEventId(evtid, sizeof(evtid));
+        doc["id"] = evtid;
 
         comm.sendResponse(doc);
         lastDoorState = currentDoorState;
@@ -101,6 +107,10 @@ void loop() {
                     DEBUG_PRINT(F("[SERIAL CMD READY] "));
                     DEBUG_PRINTLN(serialCmd);
                 }
+            } else {
+                // If no cmd, respond with error
+                const char *id = rxDoc.containsKey("id") ? rxDoc["id"].as<const char*>() : nullptr;
+                comm.sendError(id, "missing_cmd");
             }
         }
     }
@@ -135,6 +145,12 @@ void loop() {
             doc["status"] = ok ? "success" : "error";
             doc["type"] = "badge";
             doc["access_granted"] = ok;
+
+            // attach generated id
+            char evtid[32];
+            comm.generateLocalEventId(evtid, sizeof(evtid));
+            doc["id"] = evtid;
+
             comm.sendResponse(doc);
 
             fsm.clearAction();
@@ -163,6 +179,11 @@ void loop() {
             doc["type"] = "admin_auth";
             doc["access_granted"] = ok;
             if (!ok) doc["locked"] = keypad.isLocked();
+
+            char evtid[32];
+            comm.generateLocalEventId(evtid, sizeof(evtid));
+            doc["id"] = evtid;
+
             comm.sendResponse(doc);
 
             fsm.clearAction();
@@ -183,7 +204,7 @@ void loop() {
 
             cmd.replace("#", "");
 
-            DynamicJsonDocument doc(256);
+            StaticJsonDocument<256> doc;
             doc["type"] = "command";
 
             /* ===== OUVERTURE MANUELLE PORTE ===== */
@@ -193,6 +214,10 @@ void loop() {
 
                 doc["status"] = "success";
                 doc["action"] = "open_door";
+
+                char evtid[32];
+                comm.generateLocalEventId(evtid, sizeof(evtid));
+                doc["id"] = evtid;
 
                 comm.sendResponse(doc);
                 fsm.onExecutionDone();
@@ -205,12 +230,21 @@ void loop() {
                 doc["status"] = "scan_required";
                 doc["command"] = "add_badge";
 
+                char evtid[32];
+                comm.generateLocalEventId(evtid, sizeof(evtid));
+                doc["id"] = evtid;
+                comm.sendResponse(doc);
             } else if (cmd == "12") {
                 ui.signal(FeedbackType::SCAN_BADGE);
                 fsm.setState(SystemState::WAIT_REMOVE_BADGE);
                 fsm.clearAction();
                 doc["status"] = "scan_required";
                 doc["command"] = "remove_badge";
+
+                char evtid[32];
+                comm.generateLocalEventId(evtid, sizeof(evtid));
+                doc["id"] = evtid;
+                comm.sendResponse(doc);
 
             } else if (cmd == "13") {
                 doc["status"] = "success";
@@ -220,7 +254,7 @@ void loop() {
                 for (uint8_t i = 0; i < eeprom.getBadgeCount(); i++) {
                     uint8_t uid[EEPROMStore::UID_SIZE];
                     for (uint8_t j = 0; j < EEPROMStore::UID_SIZE; j++) {
-                        uid[j] = EEPROM.read(2 + i * EEPROMStore::UID_SIZE + j);
+                        uid[j] = EEPROM.read(14 + i * EEPROMStore::UID_SIZE + j);
                     }
                     char uidStr[18];
                     sprintf(uidStr, "%02X %02X %02X %02X %02X",
@@ -228,6 +262,11 @@ void loop() {
                     badges.add(uidStr);
                 }
 
+                char evtid[32];
+                comm.generateLocalEventId(evtid, sizeof(evtid));
+                doc["id"] = evtid;
+
+                comm.sendResponse(doc);
                 fsm.onExecutionDone();
 
             } else if (cmd == "14") {
@@ -235,6 +274,11 @@ void loop() {
                 fsm.setState(SystemState::WAIT_RESET_CONFIRM);
                 fsm.clearAction();
                 doc["status"] = "confirm_reset";
+
+                char evtid[32];
+                comm.generateLocalEventId(evtid, sizeof(evtid));
+                doc["id"] = evtid;
+                comm.sendResponse(doc);
 
             } else if (cmd.startsWith("99")) {
                 String newPin = cmd.substring(2);
@@ -254,16 +298,26 @@ void loop() {
                     doc["status"] = "error";
                     doc["message"] = "PIN length must be 3-6 digits";
                 }
+                char evtid[32];
+                comm.generateLocalEventId(evtid, sizeof(evtid));
+                doc["id"] = evtid;
+
+                comm.sendResponse(doc);
                 fsm.onExecutionDone();
 
             } else {
                 ui.signal(FeedbackType::ERROR);
                 doc["status"] = "error";
                 doc["message"] = "Unknown command";
+
+                char evtid[32];
+                comm.generateLocalEventId(evtid, sizeof(evtid));
+                doc["id"] = evtid;
+
+                comm.sendResponse(doc);
                 fsm.onExecutionDone();
             }
 
-            comm.sendResponse(doc);
             break;
         }
 
@@ -274,6 +328,11 @@ void loop() {
             StaticJsonDocument<128> doc;
             doc["status"] = "success";
             doc["action"] = "open_door";
+
+            char evtid[32];
+            comm.generateLocalEventId(evtid, sizeof(evtid));
+            doc["id"] = evtid;
+
             comm.sendResponse(doc);
 
             fsm.onExecutionDone();
@@ -286,6 +345,11 @@ void loop() {
             StaticJsonDocument<128> doc;
             doc["status"] = "error";
             doc["action"] = "access_denied";
+
+            char evtid[32];
+            comm.generateLocalEventId(evtid, sizeof(evtid));
+            doc["id"] = evtid;
+
             comm.sendResponse(doc);
 
             fsm.onExecutionDone();
@@ -310,6 +374,11 @@ void loop() {
                 StaticJsonDocument<128> doc;
                 doc["status"] = ok ? "success" : "error";
                 doc["type"] = "add_badge";
+
+                char evtid[32];
+                comm.generateLocalEventId(evtid, sizeof(evtid));
+                doc["id"] = evtid;
+
                 comm.sendResponse(doc);
 
                 rfid.halt();
@@ -329,6 +398,11 @@ void loop() {
                 StaticJsonDocument<128> doc;
                 doc["status"] = ok ? "success" : "error";
                 doc["type"] = "remove_badge";
+
+                char evtid[32];
+                comm.generateLocalEventId(evtid, sizeof(evtid));
+                doc["id"] = evtid;
+
                 comm.sendResponse(doc);
 
                 rfid.halt();
@@ -369,6 +443,10 @@ void loop() {
                 doc["status"] = "error";
                 doc["message"] = "Invalid reset command";
             }
+
+            char evtid[32];
+            comm.generateLocalEventId(evtid, sizeof(evtid));
+            doc["id"] = evtid;
 
             comm.sendResponse(doc);
             fsm.onExecutionDone();

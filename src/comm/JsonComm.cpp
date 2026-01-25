@@ -1,142 +1,186 @@
 #include "JsonComm.h"
-#include "config.h"
 
+#ifndef DEBUG_PRINTLN
+// Keep existing DEBUG_PRINT macros compatibility if defined elsewhere.
+#define DEBUG_PRINTLN(x) Serial.println(x)
+#define DEBUG_PRINT(x) Serial.print(x)
+#endif
 
-JsonComm::JsonComm(Stream &serialPort, size_t docSize)
+JsonComm::JsonComm(Stream &serialPort)
     : serial(serialPort),
-      bufferSize(docSize)
-{}
-
-void JsonComm::begin() {
-    DEBUG_PRINTLN(F("[JSON] JsonComm initialized"));
+      bufLen(0),
+      lastReadMs(0),
+      localCounter(0)
+{
+    // initialize buffer
+    memset(buffer, 0, sizeof(buffer));
 }
 
-/* ===== RECEIVE JSON COMMAND ===== */
-bool JsonComm::receiveCommand(JsonDocument &doc) {
-    static String inputBuffer;
+void JsonComm::begin(unsigned long baud) {
+    // Serial begin is handled by main (keep no-op to avoid double begin).
+    (void)baud;
+}
 
-#if DEBUG_SERIAL
-    // =================================================
-    // MODE DEBUG : tolérant, avec timeout
-    // =================================================
-    static unsigned long lastRxTime = 0;
-    const unsigned long RX_TIMEOUT_MS = 100;
+bool JsonComm::receiveCommand(StaticJsonDocument<256> &outDoc) {
+    // Read available bytes and append to internal buffer
+    while (serial.available() > 0) {
+        int c = serial.read();
+        if (c < 0) break;
 
-    while (serial.available()) {
-        char c = serial.read();
-        lastRxTime = millis();
-
-        if (c == '\n' || c == '\r') continue;
-        inputBuffer += c;
-
-        if (inputBuffer.length() > bufferSize) {
-            DEBUG_PRINTLN(F("[JSON][ERROR] Buffer overflow, reset"));
-            inputBuffer = "";
-            return false;
-        }
-    }
-
-    if (inputBuffer.length() == 0) return false;
-
-    // attendre que le JSON semble complet
-    if (!inputBuffer.endsWith("}")) {
-        if (millis() - lastRxTime > RX_TIMEOUT_MS) {
-            DEBUG_PRINTLN(F("[JSON][ERROR] RX timeout, drop buffer"));
-            inputBuffer = "";
-        }
-        return false;
-    }
-
-    DEBUG_PRINT(F("[JSON][RX] "));
-    DEBUG_PRINTLN(inputBuffer);
-
-#else
-    // =================================================
-    // MODE PROD : robuste, basé sur délimiteur '\n'
-    // =================================================
-    while (serial.available()) {
-        char c = serial.read();
-
+        // Accept CR but treat only LF as terminator
         if (c == '\r') continue;
 
-        if (c == '\n') {
-            // fin de message
-            break;
+        if (bufLen + 1 >= MAX_LINE) {
+            // Buffer overflow -> drop buffer and send error
+            DEBUG_PRINTLN(F("[JSONCOMM] RX buffer overflow, dropping"));
+            // Send error (no id, best effort)
+            sendError(nullptr, "message_too_long");
+            bufLen = 0; // drop
+            memset(buffer, 0, sizeof(buffer));
+            // continue reading (drain)
+            continue;
         }
 
-        inputBuffer += c;
+        buffer[bufLen++] = (char)c;
 
-        if (inputBuffer.length() > bufferSize) {
-            inputBuffer = "";
-            return false;
+        // If newline detected, process one line (could have multiple lines later)
+        if (c == '\n') {
+            // Null-terminate the line (replace newline with '\0' to ease parsing)
+            buffer[bufLen - 1] = '\0';
+
+            // process first line: since buffer might contain multiple messages if serial delivered them in burst,
+            // we locate the first '\0'-terminated line and process it, then shift remaining bytes.
+            bool ok = false;
+            // Prepare a temporary StaticJsonDocument for parsing to avoid corrupting caller doc on fail
+            StaticJsonDocument<256> tmpDoc;
+            ok = processLine(buffer, tmpDoc);
+
+            // If success, move tmpDoc content into outDoc by serializing+deserializing
+            if (ok) {
+                // Copy parsed JSON to caller doc
+                // Serialize tmpDoc into a small buffer then deserialize into outDoc
+                char tmpBuf[MAX_LINE];
+                size_t n = serializeJson(tmpDoc, tmpBuf, sizeof(tmpBuf));
+                DeserializationError err = deserializeJson(outDoc, tmpBuf, n);
+                if (err) {
+                    DEBUG_PRINTLN(F("[JSONCOMM] Unexpected deserialize error copying doc"));
+                    // return false (malformed copy) but continue with buffer consumption
+                } else {
+                    // Ensure id exists (if not present, ensureId will generate one)
+                    ensureId(outDoc);
+                    // consume this line from buffer (up to and including null we set)
+                    size_t consumed = strlen(buffer) + 1; // +1 because we replaced '\n' with '\0'
+                    consumeBytes(consumed);
+                    return true;
+                }
+            } else {
+                // If processing failed (invalid json or error), consume this line and continue
+                size_t consumed = strlen(buffer) + 1;
+                consumeBytes(consumed);
+                // continue loop to attempt next messages in buffer
+            }
         }
     }
 
-    if (inputBuffer.length() == 0) return false;
-#endif
+    // No full message ready
+    return false;
+}
 
-    // =================================================
-    // Désérialisation JSON (COMMUNE)
-    // =================================================
-    DeserializationError err = deserializeJson(doc, inputBuffer);
-
-    if (err) {
-#if DEBUG_SERIAL
-        DEBUG_PRINT(F("[JSON][ERROR] Parse failed: "));
-        DEBUG_PRINTLN(err.c_str());
-#endif
-        inputBuffer = "";
+bool JsonComm::processLine(const char *line, StaticJsonDocument<256> &outDoc) {
+    if (!line || line[0] == '\0') {
+        // empty line, ignore
         return false;
     }
 
-#if DEBUG_SERIAL
-    DEBUG_PRINTLN(F("[JSON][OK] Valid JSON received"));
-#endif
+    DEBUG_PRINT(F("[JSONCOMM] RX LINE: "));
+    DEBUG_PRINTLN(line);
 
-    inputBuffer = "";
+    // Try deserialize
+    DeserializationError err = deserializeJson(outDoc, line);
+    if (err) {
+        DEBUG_PRINT(F("[JSONCOMM] JSON parse error: "));
+        DEBUG_PRINTLN(err.c_str());
+
+        // Send a standard error back (no id whenever we cannot reliably parse it)
+        sendError(nullptr, "invalid_json");
+
+        return false;
+    }
+
+    // If parse OK, ensure it's an object
+    if (!outDoc.is<JsonObject>()) {
+        sendError(nullptr, "json_not_object");
+        return false;
+    }
+
+    // This implementation will not reject messages missing "cmd" here;
+    // higher-level logic (main) can decide. We WILL ensure an "id" is present (see ensureId).
+    ensureId(outDoc);
+
     return true;
 }
 
-
-/* ===== SEND JSON RESPONSE ===== */
-void JsonComm::sendResponse(const JsonDocument &doc) {
-    DEBUG_PRINT(F("[JSON][TX] "));
-    serializeJson(doc, Serial);
-    DEBUG_PRINTLN();
+void JsonComm::ensureId(StaticJsonDocument<256> &doc) {
+    // Note: containsKey is deprecated in newer ArduinoJson versions but still available.
+    // We'll check for presence by testing doc["id"].is<const char*>() where appropriate later.
+    if (!doc.containsKey("id")) {
+        // generate id evt-<counter>
+        char idbuf[24];
+        generateLocalEventId(idbuf, sizeof(idbuf));
+        doc["id"] = idbuf;
+        DEBUG_PRINT(F("[JSONCOMM] Added generated id: "));
+        DEBUG_PRINTLN(idbuf);
+    }
 }
 
-/* ===== SEND SIMPLE STATUS ===== */
-void JsonComm::sendStatus(const char* status, const char* message) {
-    StaticJsonDocument<128> doc; doc;
-    doc["status"] = status;
-    doc["message"] = message;
-
-    DEBUG_PRINT(F("[JSON][STATUS] "));
-    serializeJson(doc, Serial);
-    DEBUG_PRINTLN();
+void JsonComm::consumeBytes(size_t n) {
+    if (n == 0) return;
+    // Find the length of current buffer (bufLen)
+    if (n >= bufLen) {
+        bufLen = 0;
+        buffer[0] = '\0';
+        return;
+    }
+    // Move remaining bytes to front
+    memmove(buffer, buffer + n, bufLen - n);
+    size_t newLen = bufLen - n;
+    // Make sure we still have zero termination at the end (we keep raw bytes, not necessarily null-terminated)
+    if (newLen < MAX_LINE) buffer[newLen] = '\0';
+    bufLen = newLen;
 }
 
-/* ===== SEND CUSTOM DATA ===== */
-void JsonComm::sendData(const char* key, const char* value) {
-    StaticJsonDocument<128> doc; doc;
-    doc[key] = value;
-    DEBUG_PRINT(F("[JSON][DATA] "));
-    serializeJson(doc, Serial);
-    DEBUG_PRINTLN();
+bool JsonComm::sendRaw(const char *txt) {
+    if (!txt) return false;
+    serial.print(txt);
+    serial.print('\n');
+    return true;
 }
 
-void JsonComm::sendData(const char* key, int value) {
-    StaticJsonDocument<128> doc; doc;
-    doc[key] = value;
-    DEBUG_PRINT(F("[JSON][DATA] "));
-    serializeJson(doc, Serial);
-    DEBUG_PRINTLN();
+bool JsonComm::sendAck(const char *id, const char *result, const char *error) {
+    StaticJsonDocument<128> doc;
+    if (id && id[0] != '\0') doc["id"] = id;
+    doc["type"] = "ack";
+    doc["result"] = result ? result : "ok";
+    if (error) doc["error"] = error;
+    serializeJson(doc, serial);
+    serial.print('\n');
+    return true;
 }
 
-void JsonComm::sendData(const char* key, bool value) {
-    StaticJsonDocument<128> doc; doc;
-    doc[key] = value;
-    DEBUG_PRINT(F("[JSON][DATA] "));
-    serializeJson(doc, Serial);
-    DEBUG_PRINTLN();
+bool JsonComm::sendError(const char *id, const char *errorMsg) {
+    StaticJsonDocument<128> doc;
+    if (id && id[0] != '\0') doc["id"] = id;
+    doc["type"] = "error";
+    doc["error"] = errorMsg ? errorMsg : "unknown_error";
+    serializeJson(doc, serial);
+    serial.print('\n');
+    return true;
+}
+
+void JsonComm::generateLocalEventId(char *buf, size_t bufLen) {
+    if (!buf || bufLen == 0) return;
+    // Simple counter based id
+    unsigned long c = ++localCounter;
+    // Format "evt-<counter>"
+    snprintf(buf, bufLen, "evt-%lu", c);
 }

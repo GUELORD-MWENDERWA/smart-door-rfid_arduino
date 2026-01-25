@@ -4,6 +4,13 @@
 #include <Arduino.h>
 #include <Keypad.h>
 
+/*
+  KeypadModule
+  - Simple wrapper around Keypad library.
+  - NOTE: currently uses String for compatibility with existing main.cpp.
+    If memory constraints force it, we can refactor to c-strings later.
+*/
+
 class KeypadModule {
 public:
     static const uint8_t MAX_ATTEMPTS = 5;

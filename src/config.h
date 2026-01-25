@@ -3,15 +3,24 @@
 
 #include <Arduino.h>
 
-// ================= DEBUG CONFIG =================
-#define DEBUG_SERIAL 0   // 1 = actif, 0 = désactivé
-
-#if DEBUG_SERIAL
-  #define DEBUG_PRINT(...)    Serial.print(__VA_ARGS__)
-  #define DEBUG_PRINTLN(...)  Serial.println(__VA_ARGS__)
+// Debug macros — set to no-op to save flash on UNO (define DEBUG_ENABLE to enable)
+#ifdef DEBUG_ENABLE
+  #define DEBUG_PRINTLN(x) Serial.println(x)
+  #define DEBUG_PRINT(x) Serial.print(x)
 #else
-  #define DEBUG_PRINT(...)
-  #define DEBUG_PRINTLN(...)
+  // no-op to reduce flash usage
+  #define DEBUG_PRINTLN(x) ((void)0)
+  #define DEBUG_PRINT(x)  ((void)0)
 #endif
+
+// EEPROM / system defaults
+#define EEPROM_MAGIC 0xA5A5
+#define EEPROM_VERSION 1
+
+// Admin PIN defaults
+#define DEFAULT_ADMIN_PIN "123"
+
+// Relay default open time (ms)
+#define RELAY_DEFAULT_OPEN_TIME 5000
 
 #endif // CONFIG_H

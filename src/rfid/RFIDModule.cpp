@@ -1,5 +1,5 @@
 #include "RFIDModule.h"
-#include "config.h"
+#include "../config.h"
 
 
 RFIDModule::RFIDModule(uint8_t ssPin, uint8_t rstPin)
@@ -77,9 +77,14 @@ void RFIDModule::halt() {
 }
 
 void RFIDModule::printUID(const uint8_t *uid) {
+    // Print each byte as two hex digits separated by space
     for (uint8_t i = 0; i < UID_SIZE; i++) {
-        if (uid[i] < 0x10) DEBUG_PRINT('0');
-        DEBUG_PRINT(uid[i], HEX);
+        // leading zero for single hex digit
+        if (uid[i] < 0x10) {
+            DEBUG_PRINT('0');
+        }
+        // use Serial.print to print hex value (avoids macro misuse)
+        Serial.print(uid[i], HEX);
         DEBUG_PRINT(' ');
     }
     DEBUG_PRINTLN();
