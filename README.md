@@ -96,4 +96,4 @@ python -m cli.cli                # CLI
 
 ## License
 
-No license has been specified yet. Contact the author before reusing this code.
+MIT. See [LICENSE](LICENSE).
